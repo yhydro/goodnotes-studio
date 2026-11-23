@@ -1,0 +1,1385 @@
+<!DOCTYPE html>
+<html lang="de" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>GoodNotes Handwriting Studio</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      overscroll-behavior: none;
+    }
+    /* Verhindert Scrollen & Zoomen beim Zeichnen mit Apple Pencil / Touch */
+    .drawing-surface {
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    /* Dezente Scrollbars im Dark Mode */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col selection:bg-indigo-500/30">
+
+  <!-- Toast Benachrichtigungen -->
+  <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-[calc(100%-2rem)] pointer-events-none"></div>
+
+  <!-- Header & Navigation -->
+  <header class="sticky top-0 z-30 bg-slate-950/90 backdrop-blur-md border-b border-slate-800/80">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-base sm:text-lg font-bold tracking-tight text-white leading-tight">GoodNotes Handwriting Studio</h1>
+          <p id="profile-summary" class="text-xs text-slate-400">0 / 82 Zeichen aufgenommen</p>
+        </div>
+      </div>
+
+      <!-- Tab Switcher -->
+      <nav class="flex bg-slate-900 p-1 rounded-xl border border-slate-800">
+        <button id="tab-btn-recorder" onclick="switchTab('recorder')" class="px-4 py-2 rounded-lg text-sm font-medium transition-all bg-indigo-600 text-white shadow-sm">
+          1. Handschrift-Recorder
+        </button>
+        <button id="tab-btn-generator" onclick="switchTab('generator')" class="px-4 py-2 rounded-lg text-sm font-medium transition-all text-slate-400 hover:text-slate-200">
+          2. Text-to-GoodNotes
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Hauptbereich -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 py-5">
+
+    <!-- ==================== TAB 1: HANDSCHRIFT-RECORDER ==================== -->
+    <section id="tab-recorder" class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+
+      <!-- Linke Spalte: Zeichenauswahl & Profil-Management -->
+      <div class="lg:col-span-5 flex flex-col gap-4">
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
+          <div class="flex items-center justify-between gap-2">
+            <h2 class="text-sm font-semibold text-slate-200">Zeichenauswahl</h2>
+            <div class="flex gap-1.5">
+              <button onclick="exportProfileJson()" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 transition">
+                Export (.json)
+              </button>
+              <label class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 transition cursor-pointer">
+                Import (.json)
+                <input type="file" id="profile-import-input" accept=".json,application/json" class="hidden" onchange="importProfileJson(event)" />
+              </label>
+            </div>
+          </div>
+
+          <!-- Fortschrittsbalken -->
+          <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+            <div id="recorder-progress-bar" class="bg-gradient-to-r from-indigo-500 to-blue-500 h-full transition-all duration-300" style="width: 0%"></div>
+          </div>
+
+          <!-- Zeichen-Grid -->
+          <div id="char-grid" class="grid grid-cols-7 sm:grid-cols-9 lg:grid-cols-7 gap-1.5 max-h-[340px] lg:max-h-[520px] overflow-y-auto pr-1">
+            <!-- Wird dynamisch per JS gefüllt -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Rechte Spalte: Zeichenfläche & Varianten -->
+      <div class="lg:col-span-7 flex flex-col gap-4">
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5 flex flex-col gap-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <span class="text-xs uppercase tracking-wider font-semibold text-slate-400">Aktuelles Zeichen:</span>
+              <div id="current-char-badge" class="w-12 h-12 rounded-xl bg-indigo-500/15 border border-indigo-500/40 text-indigo-300 flex items-center justify-center text-2xl font-bold">
+                a
+              </div>
+              <div class="text-xs text-slate-400">
+                <p id="current-char-variants-count" class="font-medium text-slate-200">0 Varianten gespeichert</p>
+                <p>Schreibe auf die blaue Grundlinie</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <button onclick="selectRelativeChar(-1)" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium border border-slate-700 transition">
+                ← Zurück
+              </button>
+              <button onclick="selectRelativeChar(1)" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium border border-slate-700 transition">
+                Weiter →
+              </button>
+            </div>
+          </div>
+
+          <!-- Zeichen-Canvas -->
+          <div id="recorder-canvas-wrapper" class="relative w-full h-72 sm:h-80 bg-slate-950 rounded-2xl border border-slate-700/80 overflow-hidden shadow-inner">
+            <canvas id="recorder-canvas" class="drawing-surface w-full h-full block cursor-crosshair"></canvas>
+            <div class="pointer-events-none absolute top-2.5 right-3 text-[11px] text-slate-500 bg-slate-900/80 px-2 py-0.5 rounded-md border border-slate-800">
+              Apple Pencil & Touch bereit
+            </div>
+          </div>
+
+          <!-- Aktions-Buttons -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <button onclick="undoRecorderStroke()" class="px-3 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-[0.98] text-sm font-medium text-slate-200 border border-slate-700 transition">
+              Strich zurück
+            </button>
+            <button onclick="clearRecorderCanvas()" class="px-3 py-3 rounded-xl bg-slate-800 hover:bg-rose-950/60 hover:text-rose-300 hover:border-rose-800/60 active:scale-[0.98] text-sm font-medium text-slate-200 border border-slate-700 transition">
+              Leeren
+            </button>
+            <button onclick="saveCurrentVariant(false)" class="px-3 py-3 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 active:scale-[0.98] text-sm font-semibold text-blue-300 border border-blue-500/40 transition">
+              + Weitere Variante
+            </button>
+            <button onclick="saveCurrentVariant(true)" class="px-3 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-sm font-semibold text-white shadow-lg shadow-indigo-600/20 transition">
+              Speichern & Nächstes
+            </button>
+          </div>
+
+          <!-- Gespeicherte Varianten für aktuelles Zeichen -->
+          <div class="pt-2 border-t border-slate-800">
+            <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2.5">Gespeicherte Varianten</h3>
+            <div id="variants-list" class="flex flex-wrap gap-2.5 min-h-[64px] items-center">
+              <span class="text-xs text-slate-500">Noch keine Varianten für dieses Zeichen aufgenommen.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 2: TEXT-TO-GOODNOTES GENERATOR ==================== -->
+    <section id="tab-generator" class="hidden grid-cols-1 lg:grid-cols-12 gap-5">
+
+      <!-- Linke Spalte: Einstellungen & Texteingabe -->
+      <div class="lg:col-span-5 flex flex-col gap-4">
+
+        <!-- Vorlagen-Upload -->
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
+          <div class="flex items-center justify-between">
+            <h2 class="text-sm font-semibold text-slate-200">1. GoodNotes-Vorlage (.goodnotes)</h2>
+            <span id="template-status-pill" class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
+              Nicht geladen
+            </span>
+          </div>
+          <label class="flex flex-col items-center justify-center gap-1.5 p-4 rounded-xl border-2 border-dashed border-slate-700 hover:border-indigo-500/70 bg-slate-950/60 hover:bg-slate-900/80 transition cursor-pointer text-center">
+            <svg class="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+            </svg>
+            <span class="text-sm font-medium text-slate-200">Vorlage auswählen (1 Seite, mind. 1 Strich)</span>
+            <span id="template-info-text" class="text-xs text-slate-400">z. B. deine test.goodnotes Datei</span>
+            <input type="file" id="template-file-input" accept=".goodnotes,.zip" class="hidden" onchange="handleTemplateUpload(event)" />
+          </label>
+        </div>
+
+        <!-- Texteingabe -->
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 flex flex-col gap-2.5">
+          <div class="flex items-center justify-between">
+            <h2 class="text-sm font-semibold text-slate-200">2. Dein Text</h2>
+            <span id="stroke-count-badge" class="text-xs text-slate-400">0 Striche</span>
+          </div>
+          <textarea
+            id="generator-text"
+            rows="6"
+            placeholder="Tippe oder füge hier deinen Text ein..."
+            oninput="updateGeneratorPreview()"
+            class="w-full rounded-xl bg-slate-950 border border-slate-700 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none p-3 text-sm text-slate-100 placeholder-slate-500 resize-y"
+          >Hallo GoodNotes!
+Das ist echte, radierbare Handschrift direkt aus dem Browser.</textarea>
+
+          <!-- Warnung bei fehlenden Zeichen -->
+          <div id="missing-chars-box" class="hidden rounded-xl bg-amber-500/10 border border-amber-500/30 p-2.5 text-xs text-amber-200 flex items-start gap-2">
+            <span class="font-bold shrink-0">Fehlende Zeichen:</span>
+            <span id="missing-chars-list" class="font-mono break-all"></span>
+          </div>
+        </div>
+
+        <!-- Schieberegler -->
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3.5">
+          <div class="flex items-center justify-between">
+            <h2 class="text-sm font-semibold text-slate-200">3. Layout & Realismus</h2>
+            <button onclick="rerollJitter()" class="text-xs font-medium text-indigo-400 hover:text-indigo-300 transition">
+              ↻ Jitter neu würfeln
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs">
+            <div>
+              <div class="flex justify-between mb-1"><span class="text-slate-300">Schriftgröße</span><span id="val-fontSize" class="text-indigo-300 font-mono">24</span></div>
+              <input type="range" id="opt-fontSize" min="10" max="60" step="1" value="24" oninput="updateGeneratorPreview()" class="w-full accent-indigo-500" />
+            </div>
+            <div>
+              <div class="flex justify-between mb-1"><span class="text-slate-300">Zeilenabstand</span><span id="val-lineHeight" class="text-indigo-300 font-mono">1.45</span></div>
+              <input type="range" id="opt-lineHeight" min="1.0" max="2.5" step="0.05" value="1.45" oninput="updateGeneratorPreview()" class="w-full accent-indigo-500" />
+            </div>
+            <div>
+              <div class="flex justify-between mb-1"><span class="text-slate-300">Buchstabenabstand</span><span id="val-letterSpacing" class="text-indigo-300 font-mono">1.5</span></div>
+              <input type="range" id="opt-letterSpacing" min="-4" max="12" step="0.5" value="1.5" oninput="updateGeneratorPreview()" class="w-full accent-indigo-500" />
+            </div>
+            <div>
+              <div class="flex justify-between mb-1"><span class="text-slate-300">Strichstärke</span><span id="val-strokeWidth" class="text-indigo-300 font-mono">2.2</span></div>
+              <input type="range" id="opt-strokeWidth" min="0.5" max="10" step="0.1" value="2.2" oninput="updateGeneratorPreview()" class="w-full accent-indigo-500" />
+            </div>
+            <div>
+              <div class="flex justify-between mb-1"><span class="text-slate-300">Realismus / Jitter</span><span id="val-jitter" class="text-indigo-300 font-mono">40%</span></div>
+              <input type="range" id="opt-jitter" min="0" max="100" step="5" value="40" oninput="updateGeneratorPreview()" class="w-full accent-indigo-500" />
+            </div>
+            <div>
+              <div class="flex justify-between mb-1"><span class="text-slate-300">Seitenrand Links</span><span id="val-marginLeft" class="text-indigo-300 font-mono">55</span></div>
+              <input type="range" id="opt-marginLeft" min="15" max="150" step="5" value="55" oninput="updateGeneratorPreview()" class="w-full accent-indigo-500" />
+            </div>
+            <div>
+              <div class="flex justify-between mb-1"><span class="text-slate-300">Seitenrand Oben</span><span id="val-marginTop" class="text-indigo-300 font-mono">70</span></div>
+              <input type="range" id="opt-marginTop" min="20" max="180" step="5" value="70" oninput="updateGeneratorPreview()" class="w-full accent-indigo-500" />
+            </div>
+            <div>
+              <div class="flex justify-between mb-1"><span class="text-slate-300">Seitenbreite (A4)</span><span id="val-pageWidth" class="text-indigo-300 font-mono">595</span></div>
+              <input type="range" id="opt-pageWidth" min="450" max="800" step="1" value="595" oninput="updateGeneratorPreview()" class="w-full accent-indigo-500" />
+            </div>
+          </div>
+
+          <!-- Export Button -->
+          <button
+            id="btn-export-goodnotes"
+            onclick="exportToGoodNotes()"
+            class="mt-2 w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 active:scale-[0.99] text-white font-semibold text-sm shadow-lg shadow-indigo-600/25 transition flex items-center justify-center gap-2"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+            </svg>
+            Als .goodnotes exportieren
+          </button>
+        </div>
+      </div>
+
+      <!-- Rechte Spalte: Live A4 Vorschau -->
+      <div class="lg:col-span-7 flex flex-col gap-3">
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h2 class="text-sm font-semibold text-slate-200">Live-Vorschau (A4)</h2>
+            <div class="flex items-center gap-1.5 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
+              <button id="bg-btn-blank" onclick="setPreviewBg('blank')" class="px-2.5 py-1 rounded-md text-slate-400 hover:text-white transition">Blanko</button>
+              <button id="bg-btn-lined" onclick="setPreviewBg('lined')" class="px-2.5 py-1 rounded-md bg-slate-800 text-white font-medium transition">Liniert</button>
+              <button id="bg-btn-grid" onclick="setPreviewBg('grid')" class="px-2.5 py-1 rounded-md text-slate-400 hover:text-white transition">Kariert</button>
+            </div>
+          </div>
+
+          <div class="w-full flex justify-center bg-slate-950/90 rounded-xl p-3 sm:p-4 border border-slate-800 overflow-hidden">
+            <canvas id="preview-canvas" class="w-full max-w-[540px] aspect-[595/842] bg-white rounded-lg shadow-2xl"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    // =========================================================================
+    // 1. KONFIGURATION & GLOBALER ZUSTAND
+    // =========================================================================
+    const CHARSET = [
+      ...'abcdefghijklmnopqrstuvwxyz',
+      ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+      ...'0123456789',
+      ...'äöüßÄÖÜ',
+      ...'.,!?;:-()\'"/+'
+    ];
+
+    const STORAGE_KEY = 'gn_handwriting_studio_profile_v1';
+
+    let handwritingProfile = {}; // { "a": [ { advanceWidth: 0.6, strokes: [ [{x, y}, ...] ] } ] }
+    let currentChar = 'a';
+    let currentStrokes = [];
+    let activeStroke = null;
+    let isDrawing = false;
+
+    // Generator State
+    let loadedTemplateZip = null;
+    let loadedTemplateNotesPath = null;
+    let loadedTemplateFileName = 'dokument.goodnotes';
+    let templateMsg1 = null;
+    let templateMsg2 = null;
+    let previewBgMode = 'lined';
+    let jitterSeed = 1337;
+    let lastGeneratedStrokes = []; // Array of [ {x, y}, ... ]
+
+    // =========================================================================
+    // 2. TOAST & UI HELFER
+    // =========================================================================
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const el = document.createElement('div');
+      const colors = {
+        info: 'bg-slate-800 border-slate-700 text-slate-100',
+        success: 'bg-emerald-950/95 border-emerald-700/70 text-emerald-200',
+        error: 'bg-rose-950/95 border-rose-700/70 text-rose-200',
+        warn: 'bg-amber-950/95 border-amber-700/70 text-amber-200',
+      };
+      el.className = `pointer-events-auto px-4 py-3 rounded-xl border shadow-xl text-sm font-medium transition-all duration-300 translate-y-2 opacity-0 ${colors[type] || colors.info}`;
+      el.textContent = message;
+      container.appendChild(el);
+
+      requestAnimationFrame(() => {
+        el.classList.remove('translate-y-2', 'opacity-0');
+      });
+
+      setTimeout(() => {
+        el.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => el.remove(), 300);
+      }, 3200);
+    }
+
+    function switchTab(tab) {
+      const recSec = document.getElementById('tab-recorder');
+      const genSec = document.getElementById('tab-generator');
+      const recBtn = document.getElementById('tab-btn-recorder');
+      const genBtn = document.getElementById('tab-btn-generator');
+
+      if (tab === 'recorder') {
+        recSec.classList.remove('hidden');
+        recSec.classList.add('grid');
+        genSec.classList.add('hidden');
+        genSec.classList.remove('grid');
+
+        recBtn.className = 'px-4 py-2 rounded-lg text-sm font-medium transition-all bg-indigo-600 text-white shadow-sm';
+        genBtn.className = 'px-4 py-2 rounded-lg text-sm font-medium transition-all text-slate-400 hover:text-slate-200';
+        resizeRecorderCanvas();
+      } else {
+        genSec.classList.remove('hidden');
+        genSec.classList.add('grid');
+        recSec.classList.add('hidden');
+        recSec.classList.remove('grid');
+
+        genBtn.className = 'px-4 py-2 rounded-lg text-sm font-medium transition-all bg-indigo-600 text-white shadow-sm';
+        recBtn.className = 'px-4 py-2 rounded-lg text-sm font-medium transition-all text-slate-400 hover:text-slate-200';
+        updateGeneratorPreview();
+      }
+    }
+
+    // =========================================================================
+    // 3. PROFIL-SPEICHERUNG (LocalStorage & JSON)
+    // =========================================================================
+    function loadProfileFromStorage() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') {
+            handwritingProfile = parsed;
+          }
+        }
+      } catch (err) {
+        console.error('Fehler beim Laden aus localStorage:', err);
+      }
+    }
+
+    function saveProfileToStorage() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(handwritingProfile));
+      } catch (err) {
+        showToast('Speichern im Browser fehlgeschlagen (Speicher voll?).', 'error');
+      }
+      updateProfileStats();
+    }
+
+    function updateProfileStats() {
+      const recordedCount = CHARSET.filter(ch => handwritingProfile[ch] && handwritingProfile[ch].length > 0).length;
+      const pct = Math.round((recordedCount / CHARSET.length) * 100);
+      document.getElementById('profile-summary').textContent = `${recordedCount} / ${CHARSET.length} Zeichen aufgenommen (${pct}%)`;
+      document.getElementById('recorder-progress-bar').style.width = `${pct}%`;
+    }
+
+    function exportProfileJson() {
+      const dataStr = JSON.stringify(handwritingProfile, null, 2);
+      const blob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'meine_handschrift.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      showToast('Handschrift-Profil als JSON exportiert!', 'success');
+    }
+
+    function importProfileJson(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const parsed = JSON.parse(reader.result);
+          if (!parsed || typeof parsed !== 'object') throw new Error('Ungültiges Format');
+          handwritingProfile = parsed;
+          saveProfileToStorage();
+          renderCharGrid();
+          renderVariantsList();
+          updateGeneratorPreview();
+          showToast('Handschrift-Profil erfolgreich importiert!', 'success');
+        } catch (err) {
+          showToast('Ungültige JSON-Datei.', 'error');
+        }
+      };
+      reader.readAsText(file);
+      event.target.value = '';
+    }
+
+    // =========================================================================
+    // 4. HANDSCHRIFT-RECORDER (Canvas, Hilfslinien, Normalisierung)
+    // =========================================================================
+    const recCanvas = document.getElementById('recorder-canvas');
+    const recCtx = recCanvas.getContext('2d');
+
+    function getRecorderMetrics() {
+      const w = recCanvas.clientWidth;
+      const h = recCanvas.clientHeight;
+      return {
+        w,
+        h,
+        ascenderY: h * 0.20,
+        xHeightY: h * 0.45,
+        baselineY: h * 0.75,
+        descenderY: h * 0.92,
+        refHeight: h * 0.55, // baselineY - ascenderY
+      };
+    }
+
+    function resizeRecorderCanvas() {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = recCanvas.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+      recCanvas.width = Math.round(rect.width * dpr);
+      recCanvas.height = Math.round(rect.height * dpr);
+      recCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      drawRecorderCanvas();
+    }
+
+    function drawRecorderCanvas() {
+      const m = getRecorderMetrics();
+      recCtx.clearRect(0, 0, m.w, m.h);
+
+      // Dezente Hilfslinien
+      const drawGuide = (y, color, dashed = true, label = '') => {
+        recCtx.save();
+        recCtx.beginPath();
+        recCtx.strokeStyle = color;
+        recCtx.lineWidth = dashed ? 1 : 1.5;
+        if (dashed) recCtx.setLineDash([5, 5]);
+        recCtx.moveTo(0, y);
+        recCtx.lineTo(m.w, y);
+        recCtx.stroke();
+        if (label) {
+          recCtx.fillStyle = color;
+          recCtx.font = '10px Inter, sans-serif';
+          recCtx.fillText(label, 10, y - 4);
+        }
+        recCtx.restore();
+      };
+
+      drawGuide(m.ascenderY, 'rgba(148, 163, 184, 0.28)', true, 'Oberlänge');
+      drawGuide(m.xHeightY, 'rgba(148, 163, 184, 0.22)', true, 'Mittellinie');
+      drawGuide(m.baselineY, 'rgba(99, 102, 241, 0.65)', false, 'Grundlinie');
+      drawGuide(m.descenderY, 'rgba(148, 163, 184, 0.22)', true, 'Unterlänge');
+
+      // Dezentes Wasserzeichen des aktuellen Zeichens
+      recCtx.save();
+      recCtx.fillStyle = 'rgba(148, 163, 184, 0.08)';
+      recCtx.font = `600 ${Math.round(m.refHeight * 0.95)}px Inter, sans-serif`;
+      recCtx.textAlign = 'center';
+      recCtx.textBaseline = 'alphabetic';
+      recCtx.fillText(currentChar, m.w / 2, m.baselineY);
+      recCtx.restore();
+
+      // Striche zeichnen
+      recCtx.save();
+      recCtx.strokeStyle = '#f8fafc';
+      recCtx.lineWidth = 3.5;
+      recCtx.lineCap = 'round';
+      recCtx.lineJoin = 'round';
+
+      const all = activeStroke ? [...currentStrokes, activeStroke] : currentStrokes;
+      for (const stroke of all) {
+        if (stroke.length === 0) continue;
+        recCtx.beginPath();
+        recCtx.moveTo(stroke[0].x, stroke[0].y);
+        if (stroke.length === 1) {
+          recCtx.lineTo(stroke[0].x + 0.5, stroke[0].y + 0.5);
+        } else {
+          for (let i = 1; i < stroke.length; i++) {
+            const prev = stroke[i - 1];
+            const curr = stroke[i];
+            const midX = (prev.x + curr.x) / 2;
+            const midY = (prev.y + curr.y) / 2;
+            recCtx.quadraticCurveTo(prev.x, prev.y, midX, midY);
+          }
+          const last = stroke[stroke.length - 1];
+          recCtx.lineTo(last.x, last.y);
+        }
+        recCtx.stroke();
+      }
+      recCtx.restore();
+    }
+
+    function getCanvasPos(e) {
+      const rect = recCanvas.getBoundingClientRect();
+      return {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+      };
+    }
+
+    recCanvas.addEventListener('pointerdown', (e) => {
+      if (!e.isPrimary) return;
+      e.preventDefault();
+      recCanvas.setPointerCapture(e.pointerId);
+      isDrawing = true;
+      const pt = getCanvasPos(e);
+      activeStroke = [pt];
+      drawRecorderCanvas();
+    });
+
+    recCanvas.addEventListener('pointermove', (e) => {
+      if (!isDrawing || !activeStroke || !e.isPrimary) return;
+      e.preventDefault();
+      const pt = getCanvasPos(e);
+      const last = activeStroke[activeStroke.length - 1];
+      const dist = Math.hypot(pt.x - last.x, pt.y - last.y);
+      // Minimale Distanz verhindert unnötig riesige Dateien
+      if (dist >= 2.2) {
+        activeStroke.push(pt);
+        drawRecorderCanvas();
+      }
+    });
+
+    function finishActiveStroke(e) {
+      if (!isDrawing || !activeStroke) return;
+      if (e && e.pointerId !== undefined) {
+        try { recCanvas.releasePointerCapture(e.pointerId); } catch (_) {}
+      }
+      isDrawing = false;
+      if (activeStroke.length > 0) {
+        currentStrokes.push(activeStroke);
+      }
+      activeStroke = null;
+      drawRecorderCanvas();
+    }
+
+    recCanvas.addEventListener('pointerup', finishActiveStroke);
+    recCanvas.addEventListener('pointercancel', finishActiveStroke);
+
+    function undoRecorderStroke() {
+      if (currentStrokes.length > 0) {
+        currentStrokes.pop();
+        drawRecorderCanvas();
+      }
+    }
+
+    function clearRecorderCanvas() {
+      currentStrokes = [];
+      activeStroke = null;
+      drawRecorderCanvas();
+    }
+
+    function saveCurrentVariant(advanceToNext) {
+      if (currentStrokes.length === 0) {
+        showToast('Bitte zeichne zuerst das Zeichen auf die Fläche.', 'warn');
+        return;
+      }
+
+      const m = getRecorderMetrics();
+      let minX = Infinity;
+      let maxX = -Infinity;
+
+      for (const stroke of currentStrokes) {
+        for (const pt of stroke) {
+          if (pt.x < minX) minX = pt.x;
+          if (pt.x > maxX) maxX = pt.x;
+        }
+      }
+
+      // Normalisierung relativ zur Grundlinie (y=0) und refHeight (1.0)
+      const normalizedStrokes = currentStrokes.map(stroke =>
+        stroke.map(pt => ({
+          x: Number(((pt.x - minX) / m.refHeight).toFixed(4)),
+          y: Number(((pt.y - m.baselineY) / m.refHeight).toFixed(4)),
+        }))
+      );
+
+      const rawWidth = (maxX - minX) / m.refHeight;
+      const advanceWidth = Number(Math.max(0.18, rawWidth).toFixed(4));
+
+      if (!handwritingProfile[currentChar]) {
+        handwritingProfile[currentChar] = [];
+      }
+      handwritingProfile[currentChar].push({
+        advanceWidth,
+        strokes: normalizedStrokes,
+      });
+
+      saveProfileToStorage();
+      clearRecorderCanvas();
+      renderCharGrid();
+      renderVariantsList();
+
+      if (advanceToNext) {
+        selectRelativeChar(1);
+      } else {
+        showToast(`Variante für "${currentChar}" gespeichert!`, 'success');
+      }
+    }
+
+    function selectChar(ch) {
+      currentChar = ch;
+      clearRecorderCanvas();
+      document.getElementById('current-char-badge').textContent = ch;
+      renderCharGrid();
+      renderVariantsList();
+    }
+
+    function selectRelativeChar(delta) {
+      const idx = CHARSET.indexOf(currentChar);
+      const nextIdx = (idx + delta + CHARSET.length) % CHARSET.length;
+      selectChar(CHARSET[nextIdx]);
+    }
+
+    function renderCharGrid() {
+      const grid = document.getElementById('char-grid');
+      grid.innerHTML = '';
+
+      for (const ch of CHARSET) {
+        const count = handwritingProfile[ch] ? handwritingProfile[ch].length : 0;
+        const isSelected = ch === currentChar;
+
+        const btn = document.createElement('button');
+        btn.onclick = () => selectChar(ch);
+        btn.className = `relative h-11 rounded-xl flex items-center justify-center text-sm font-semibold transition border ${
+          isSelected
+            ? 'bg-indigo-600 text-white border-indigo-400 shadow-md shadow-indigo-600/30'
+            : count > 0
+            ? 'bg-emerald-500/10 text-emerald-200 border-emerald-500/30 hover:bg-emerald-500/20'
+            : 'bg-slate-950/70 text-slate-400 border-slate-800 hover:border-slate-600 hover:text-slate-200'
+        }`;
+
+        btn.textContent = ch;
+
+        if (count > 0) {
+          const badge = document.createElement('span');
+          badge.className = `absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full text-[10px] font-bold flex items-center justify-center ${
+            isSelected ? 'bg-white text-indigo-700' : 'bg-emerald-500 text-slate-950'
+          }`;
+          badge.textContent = count;
+          btn.appendChild(badge);
+        }
+
+        grid.appendChild(btn);
+      }
+    }
+
+    function renderVariantsList() {
+      const list = document.getElementById('variants-list');
+      const variants = handwritingProfile[currentChar] || [];
+      document.getElementById('current-char-variants-count').textContent =
+        `${variants.length} ${variants.length === 1 ? 'Variante' : 'Varianten'} gespeichert`;
+
+      list.innerHTML = '';
+      if (variants.length === 0) {
+        list.innerHTML = '<span class="text-xs text-slate-500">Noch keine Varianten für dieses Zeichen aufgenommen.</span>';
+        return;
+      }
+
+      variants.forEach((variant, idx) => {
+        const card = document.createElement('div');
+        card.className = 'relative group w-16 h-16 rounded-xl bg-slate-950 border border-slate-700/80 flex items-center justify-center p-1.5';
+
+        // Mini-SVG Vorschau
+        const svgNS = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(svgNS, 'svg');
+        svg.setAttribute('viewBox', `-0.15 -1.15 ${Math.max(0.8, variant.advanceWidth + 0.3)} 1.55`);
+        svg.setAttribute('class', 'w-full h-full overflow-visible');
+
+        for (const stroke of variant.strokes) {
+          if (stroke.length === 0) continue;
+          const path = document.createElementNS(svgNS, 'path');
+          let d = `M ${stroke[0].x} ${stroke[0].y}`;
+          for (let i = 1; i < stroke.length; i++) {
+            d += ` L ${stroke[i].x} ${stroke[i].y}`;
+          }
+          if (stroke.length === 1) {
+            d += ` L ${stroke[0].x + 0.02} ${stroke[0].y + 0.02}`;
+          }
+          path.setAttribute('d', d);
+          path.setAttribute('fill', 'none');
+          path.setAttribute('stroke', '#e2e8f0');
+          path.setAttribute('stroke-width', '0.08');
+          path.setAttribute('stroke-linecap', 'round');
+          path.setAttribute('stroke-linejoin', 'round');
+          svg.appendChild(path);
+        }
+        card.appendChild(svg);
+
+        // Löschen-Button
+        const delBtn = document.createElement('button');
+        delBtn.title = 'Variante löschen';
+        delBtn.onclick = () => {
+          handwritingProfile[currentChar].splice(idx, 1);
+          if (handwritingProfile[currentChar].length === 0) {
+            delete handwritingProfile[currentChar];
+          }
+          saveProfileToStorage();
+          renderCharGrid();
+          renderVariantsList();
+        };
+        delBtn.className = 'absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold flex items-center justify-center shadow';
+        delBtn.textContent = '×';
+        card.appendChild(delBtn);
+
+        list.appendChild(card);
+      });
+    }
+
+    // =========================================================================
+    // 5. EXAKTER .GOODNOTES BINARY WRITER (BigInt Varints, Protobuf, TPL, bv41)
+    // =========================================================================
+    function readVarint(bytes, offset) {
+      let result = 0n;
+      let shift = 0n;
+      let pos = offset;
+      while (pos < bytes.length) {
+        const b = BigInt(bytes[pos++]);
+        result |= (b & 0x7fn) << shift;
+        if ((b & 0x80n) === 0n) {
+          return { value: result, offset: pos };
+        }
+        shift += 7n;
+        if (shift > 70n) throw new Error('Varint zu groß');
+      }
+      throw new Error('Unerwartetes Dateiende beim Lesen eines Varints');
+    }
+
+    function encodeVarint(val) {
+      let value = typeof val === 'bigint' ? val : BigInt(val);
+      const out = [];
+      while (true) {
+        const byte = Number(value & 0x7fn);
+        value >>= 7n;
+        if (value !== 0n) {
+          out.push(byte | 0x80);
+        } else {
+          out.push(byte);
+          break;
+        }
+      }
+      return new Uint8Array(out);
+    }
+
+    function concatUint8Arrays(arrays) {
+      let total = 0;
+      for (const a of arrays) total += a.length;
+      const res = new Uint8Array(total);
+      let offset = 0;
+      for (const a of arrays) {
+        res.set(a, offset);
+        offset += a.length;
+      }
+      return res;
+    }
+
+    function parseProtobufRaw(bytes) {
+      let pos = 0;
+      const fields = [];
+      while (pos < bytes.length) {
+        const tagRes = readVarint(bytes, pos);
+        pos = tagRes.offset;
+        const fieldNum = Number(tagRes.value >> 3n);
+        const wireType = Number(tagRes.value & 7n);
+
+        if (wireType === 0) {
+          const valRes = readVarint(bytes, pos);
+          pos = valRes.offset;
+          fields.push({ fieldNum, wireType, val: valRes.value });
+        } else if (wireType === 1) {
+          fields.push({ fieldNum, wireType, val: bytes.slice(pos, pos + 8) });
+          pos += 8;
+        } else if (wireType === 2) {
+          const lenRes = readVarint(bytes, pos);
+          pos = lenRes.offset;
+          const len = Number(lenRes.value);
+          fields.push({ fieldNum, wireType, val: bytes.slice(pos, pos + len) });
+          pos += len;
+        } else if (wireType === 5) {
+          fields.push({ fieldNum, wireType, val: bytes.slice(pos, pos + 4) });
+          pos += 4;
+        } else {
+          throw new Error(`Nicht unterstützter Protobuf Wire-Type: ${wireType}`);
+        }
+      }
+      return fields;
+    }
+
+    function serializeProtobufRaw(fields) {
+      const parts = [];
+      for (const f of fields) {
+        const tag = (BigInt(f.fieldNum) << 3n) | BigInt(f.wireType);
+        parts.push(encodeVarint(tag));
+        if (f.wireType === 0) {
+          parts.push(encodeVarint(f.val));
+        } else if (f.wireType === 1 || f.wireType === 5) {
+          parts.push(f.val);
+        } else if (f.wireType === 2) {
+          parts.push(encodeVarint(f.val.length));
+          parts.push(f.val);
+        }
+      }
+      return concatUint8Arrays(parts);
+    }
+
+    function buildTplStroke(rawPoints, width) {
+      const points = rawPoints.length === 1
+        ? [rawPoints[0], { x: rawPoints[0].x + 0.5, y: rawPoints[0].y + 0.5 }]
+        : rawPoints;
+
+      const fmtStr = 'vuA(v)A(S(uu))A(S(uuuu))vA(f)\0';
+      const fmtBytes = new Uint8Array(fmtStr.length);
+      for (let i = 0; i < fmtStr.length; i++) fmtBytes[i] = fmtStr.charCodeAt(i);
+
+      const numSegments = points.length - 1;
+      const bodyLen = 34 + 18 * numSegments;
+      const totalLen = 8 + fmtBytes.length + bodyLen;
+
+      const buffer = new ArrayBuffer(totalLen);
+      const bytes = new Uint8Array(buffer);
+      const view = new DataView(buffer);
+
+      // Header: "tpl\0" + uint32_le(totalLen) + fmt
+      bytes[0] = 0x74; // t
+      bytes[1] = 0x70; // p
+      bytes[2] = 0x6c; // l
+      bytes[3] = 0x00;
+      view.setUint32(4, totalLen, true);
+      bytes.set(fmtBytes, 8);
+
+      let offset = 8 + fmtBytes.length;
+
+      // v: uint16(2)
+      view.setUint16(offset, 2, true); offset += 2;
+      // u: float32(width)
+      view.setFloat32(offset, width, true); offset += 4;
+
+      // A(v): uint32(numSegments + 1), uint16(0), numSegments * uint16(1)
+      view.setUint32(offset, numSegments + 1, true); offset += 4;
+      view.setUint16(offset, 0, true); offset += 2;
+      for (let i = 0; i < numSegments; i++) {
+        view.setUint16(offset, 1, true); offset += 2;
+      }
+
+      // A(S(uu)): uint32(1), float32(x0), float32(y0)
+      view.setUint32(offset, 1, true); offset += 4;
+      view.setFloat32(offset, points[0].x, true); offset += 4;
+      view.setFloat32(offset, points[0].y, true); offset += 4;
+
+      // A(S(uuuu)): uint32(numSegments), Segmente (cx, cy, nx, ny)
+      view.setUint32(offset, numSegments, true); offset += 4;
+      for (let i = 0; i < numSegments; i++) {
+        const p0 = points[i];
+        const p1 = points[i + 1];
+        const cx = (p0.x + p1.x) / 2.0;
+        const cy = (p0.y + p1.y) / 2.0;
+        view.setFloat32(offset, cx, true); offset += 4;
+        view.setFloat32(offset, cy, true); offset += 4;
+        view.setFloat32(offset, p1.x, true); offset += 4;
+        view.setFloat32(offset, p1.y, true); offset += 4;
+      }
+
+      // v: uint16(1), A(f): uint32(0)
+      view.setUint16(offset, 1, true); offset += 2;
+      view.setUint32(offset, 0, true); offset += 4;
+
+      return bytes;
+    }
+
+    function compressAppleBv41(raw) {
+      const prefix = [];
+      if (raw.length < 15) {
+        prefix.push(raw.length << 4);
+      } else {
+        prefix.push(0xf0);
+        let rem = raw.length - 15;
+        while (rem >= 255) {
+          prefix.push(255);
+          rem -= 255;
+        }
+        prefix.push(rem);
+      }
+
+      const lz4Block = new Uint8Array(prefix.length + raw.length);
+      lz4Block.set(prefix, 0);
+      lz4Block.set(raw, prefix.length);
+
+      const out = new Uint8Array(12 + lz4Block.length + 4);
+      const view = new DataView(out.buffer);
+
+      // "bv41"
+      out[0] = 0x62; out[1] = 0x76; out[2] = 0x34; out[3] = 0x31;
+      view.setUint32(4, raw.length, true);
+      view.setUint32(8, lz4Block.length, true);
+      out.set(lz4Block, 12);
+
+      // "bv4$"
+      const endPos = 12 + lz4Block.length;
+      out[endPos] = 0x62; out[endPos + 1] = 0x76; out[endPos + 2] = 0x34; out[endPos + 3] = 0x24;
+
+      return out;
+    }
+
+    function generateUpperUuidBytes() {
+      let uuidStr;
+      if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        uuidStr = crypto.randomUUID().toUpperCase();
+      } else {
+        uuidStr = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+          const r = (Math.random() * 16) | 0;
+          const v = c === 'x' ? r : (r & 0x3) | 0x8;
+          return v.toString(16);
+        }).toUpperCase();
+      }
+      return new TextEncoder().encode(uuidStr);
+    }
+
+    function incrementClockField(clockBytes, clockOffsetBigInt) {
+      const inner = parseProtobufRaw(clockBytes);
+      const updated = inner.map((f) => {
+        if (f.fieldNum === 2 && f.wireType === 0) {
+          return { ...f, val: f.val + clockOffsetBigInt };
+        }
+        return f;
+      });
+      return serializeProtobufRaw(updated);
+    }
+
+    function startsWithBv4(bytes) {
+      return bytes.length >= 3 && bytes[0] === 0x62 && bytes[1] === 0x76 && bytes[2] === 0x34;
+    }
+
+    function cloneStrokePair(msg1Fields, msg2Fields, points, clockOffset, width) {
+      const newUuid = generateUpperUuidBytes();
+      const newBv41 = compressAppleBv41(buildTplStroke(points, width));
+      const offsetBig = BigInt(clockOffset);
+
+      // Nachricht #1 (Metadaten)
+      const newMsg1 = msg1Fields.map((f) => {
+        if (f.fieldNum === 1 && f.wireType === 2) {
+          return { ...f, val: newUuid };
+        }
+        if (f.fieldNum === 2 && f.wireType === 2) {
+          return { ...f, val: incrementClockField(f.val, offsetBig) };
+        }
+        return f;
+      });
+
+      // Nachricht #2 (Geometrie)
+      const newMsg2 = msg2Fields.map((f) => {
+        if (f.fieldNum === 7 && f.wireType === 2) {
+          const inner = parseProtobufRaw(f.val);
+          const newInner = inner.map((inf) => {
+            if (inf.fieldNum === 1 && inf.wireType === 2) {
+              return { ...inf, val: newUuid };
+            }
+            if (inf.fieldNum === 2 && inf.wireType === 2 && startsWithBv4(inf.val)) {
+              return { ...inf, val: newBv41 };
+            }
+            if (inf.fieldNum === 15 && inf.wireType === 2) {
+              return { ...inf, val: incrementClockField(inf.val, offsetBig) };
+            }
+            return inf;
+          });
+          return { ...f, val: serializeProtobufRaw(newInner) };
+        }
+        return f;
+      });
+
+      const b1 = serializeProtobufRaw(newMsg1);
+      const b2 = serializeProtobufRaw(newMsg2);
+      return concatUint8Arrays([encodeVarint(b1.length), b1, encodeVarint(b2.length), b2]);
+    }
+
+    // =========================================================================
+    // 6. VORLAGEN-UPLOAD & EXPORT
+    // =========================================================================
+    async function handleTemplateUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      try {
+        const zip = await JSZip.loadAsync(file);
+        let foundPath = null;
+        let notesBytes = null;
+
+        for (const [path, zipEntry] of Object.entries(zip.files)) {
+          if (!zipEntry.dir && path.startsWith('notes/')) {
+            const content = await zipEntry.async('uint8array');
+            if (content.length > 0) {
+              foundPath = path;
+              notesBytes = content;
+              break;
+            }
+          }
+        }
+
+        if (!foundPath || !notesBytes) {
+          throw new Error('Keine nicht-leere notes/-Datei gefunden. Bitte male mind. 1 Strich in deine Vorlage.');
+        }
+
+        // Erste 2 Protobuf-Nachrichten extrahieren
+        let pos = 0;
+        const rawMsgs = [];
+        while (pos < notesBytes.length && rawMsgs.length < 2) {
+          const lenRes = readVarint(notesBytes, pos);
+          pos = lenRes.offset;
+          const len = Number(lenRes.value);
+          rawMsgs.push(parseProtobufRaw(notesBytes.slice(pos, pos + len)));
+          pos += len;
+        }
+
+        if (rawMsgs.length < 2) {
+          throw new Error('Vorlage enthält weniger als 2 Protobuf-Nachrichten.');
+        }
+
+        loadedTemplateZip = zip;
+        loadedTemplateNotesPath = foundPath;
+        loadedTemplateFileName = file.name.replace(/\.goodnotes$/i, '') + '_handwritten.goodnotes';
+        templateMsg1 = rawMsgs[0];
+        templateMsg2 = rawMsgs[1];
+
+        const pill = document.getElementById('template-status-pill');
+        pill.textContent = 'Bereit';
+        pill.className = 'text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30';
+        document.getElementById('template-info-text').textContent = `Gefunden: ${foundPath}`;
+
+        showToast('GoodNotes-Vorlage erfolgreich geladen!', 'success');
+      } catch (err) {
+        console.error(err);
+        showToast(err.message || 'Fehler beim Laden der .goodnotes-Datei.', 'error');
+      }
+      event.target.value = '';
+    }
+
+    async function exportToGoodNotes() {
+      if (!loadedTemplateZip || !templateMsg1 || !templateMsg2) {
+        showToast('Bitte lade zuerst eine .goodnotes-Vorlage hoch!', 'warn');
+        return;
+      }
+      if (lastGeneratedStrokes.length === 0) {
+        showToast('Keine Striche zum Exportieren vorhanden. Nimm zuerst Zeichen im Recorder auf!', 'warn');
+        return;
+      }
+
+      const btn = document.getElementById('btn-export-goodnotes');
+      const originalHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.textContent = 'Generiere .goodnotes...';
+
+      try {
+        const strokeWidth = parseFloat(document.getElementById('opt-strokeWidth').value);
+        const chunks = [];
+
+        for (let i = 0; i < lastGeneratedStrokes.length; i++) {
+          chunks.push(cloneStrokePair(templateMsg1, templateMsg2, lastGeneratedStrokes[i], i, strokeWidth));
+        }
+
+        const newStream = concatUint8Arrays(chunks);
+        loadedTemplateZip.file(loadedTemplateNotesPath, newStream);
+
+        const blob = await loadedTemplateZip.generateAsync({
+          type: 'blob',
+          compression: 'DEFLATE',
+        });
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = loadedTemplateFileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+
+        showToast(`Fertig! ${lastGeneratedStrokes.length} Striche exportiert.`, 'success');
+      } catch (err) {
+        console.error(err);
+        showToast('Fehler beim Exportieren: ' + err.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+      }
+    }
+
+    // =========================================================================
+    // 7. TEXT-LAYOUT-ENGINE & LIVE-VORSCHAU
+    // =========================================================================
+    function createSeededRandom(seed) {
+      let s = seed % 2147483647;
+      if (s <= 0) s += 2147483646;
+      return () => {
+        s = (s * 16807) % 2147483647;
+        return (s - 1) / 2147483646;
+      };
+    }
+
+    function rerollJitter() {
+      jitterSeed = Math.floor(Math.random() * 1000000) + 1;
+      updateGeneratorPreview();
+    }
+
+    function setPreviewBg(mode) {
+      previewBgMode = mode;
+      ['blank', 'lined', 'grid'].forEach((m) => {
+        const b = document.getElementById(`bg-btn-${m}`);
+        if (m === mode) {
+          b.className = 'px-2.5 py-1 rounded-md bg-slate-800 text-white font-medium transition';
+        } else {
+          b.className = 'px-2.5 py-1 rounded-md text-slate-400 hover:text-white transition';
+        }
+      });
+      updateGeneratorPreview();
+    }
+
+    function updateGeneratorPreview() {
+      const text = document.getElementById('generator-text').value;
+      const fontSize = parseFloat(document.getElementById('opt-fontSize').value);
+      const lineHeightFactor = parseFloat(document.getElementById('opt-lineHeight').value);
+      const letterSpacing = parseFloat(document.getElementById('opt-letterSpacing').value);
+      const strokeWidth = parseFloat(document.getElementById('opt-strokeWidth').value);
+      const jitterPct = parseFloat(document.getElementById('opt-jitter').value) / 100;
+      const marginLeft = parseFloat(document.getElementById('opt-marginLeft').value);
+      const marginTop = parseFloat(document.getElementById('opt-marginTop').value);
+      const pageWidth = parseFloat(document.getElementById('opt-pageWidth').value);
+      const pageHeight = Math.round(pageWidth * (842 / 595));
+
+      // Slider-Werte aktualisieren
+      document.getElementById('val-fontSize').textContent = fontSize;
+      document.getElementById('val-lineHeight').textContent = lineHeightFactor.toFixed(2);
+      document.getElementById('val-letterSpacing').textContent = letterSpacing.toFixed(1);
+      document.getElementById('val-strokeWidth').textContent = strokeWidth.toFixed(1);
+      document.getElementById('val-jitter').textContent = `${Math.round(jitterPct * 100)}%`;
+      document.getElementById('val-marginLeft').textContent = marginLeft;
+      document.getElementById('val-marginTop').textContent = marginTop;
+      document.getElementById('val-pageWidth').textContent = pageWidth;
+
+      const rand = createSeededRandom(jitterSeed);
+      const maxLineX = pageWidth - marginLeft;
+      const lineStep = fontSize * lineHeightFactor;
+
+      const generatedStrokes = [];
+      const missingChars = new Set();
+
+      let cursorY = marginTop + fontSize;
+      const paragraphs = text.split('\n');
+
+      for (const para of paragraphs) {
+        let cursorX = marginLeft + (rand() - 0.5) * 4 * jitterPct;
+        let lineDrift = 0;
+
+        // Wortweiser Umbruch
+        const tokens = para.split(/(\s+)/);
+        for (const token of tokens) {
+          if (!token) continue;
+
+          // Breite des Tokens vorab schätzen für sauberen Zeilenumbruch
+          if (!/^\s+$/.test(token)) {
+            let tokenWidth = 0;
+            for (const ch of token) {
+              const variants = handwritingProfile[ch];
+              if (variants && variants.length > 0) {
+                tokenWidth += variants[0].advanceWidth * fontSize + letterSpacing;
+              } else {
+                tokenWidth += fontSize * 0.45 + letterSpacing;
+              }
+            }
+            if (cursorX > marginLeft + 5 && cursorX + tokenWidth > maxLineX) {
+              cursorY += lineStep;
+              cursorX = marginLeft + (rand() - 0.5) * 4 * jitterPct;
+              lineDrift = 0;
+            }
+          }
+
+          for (const ch of token) {
+            if (ch === ' ') {
+              cursorX += fontSize * (0.38 + (rand() - 0.5) * 0.1 * jitterPct) + letterSpacing;
+              continue;
+            }
+            if (ch === '\t') {
+              cursorX += fontSize * 1.4;
+              continue;
+            }
+
+            const variants = handwritingProfile[ch];
+            if (!variants || variants.length === 0) {
+              missingChars.add(ch);
+              cursorX += fontSize * 0.45 + letterSpacing;
+              continue;
+            }
+
+            const variant = variants[Math.floor(rand() * variants.length)];
+
+            // Realismus / Jitter berechnen
+            const angle = (rand() - 0.5) * 0.12 * jitterPct; // leichte Rotation
+            const scale = 1 + (rand() - 0.5) * 0.12 * jitterPct;
+            const dy = (rand() - 0.5) * fontSize * 0.12 * jitterPct;
+            lineDrift += (rand() - 0.5) * 0.45 * jitterPct;
+
+            const cosA = Math.cos(angle);
+            const sinA = Math.sin(angle);
+            const centerX = (variant.advanceWidth * fontSize) / 2;
+
+            for (const stroke of variant.strokes) {
+              const transformed = stroke.map((pt) => {
+                const lx = pt.x * fontSize * scale - centerX;
+                const ly = pt.y * fontSize * scale;
+                const rx = lx * cosA - ly * sinA + centerX;
+                const ry = lx * sinA + ly * cosA;
+                return {
+                  x: cursorX + rx,
+                  y: cursorY + ry + dy + lineDrift,
+                };
+              });
+              generatedStrokes.push(transformed);
+            }
+
+            cursorX += variant.advanceWidth * fontSize * scale + letterSpacing + (rand() - 0.5) * 1.5 * jitterPct;
+          }
+        }
+        cursorY += lineStep;
+      }
+
+      lastGeneratedStrokes = generatedStrokes;
+      document.getElementById('stroke-count-badge').textContent = `${generatedStrokes.length} Striche`;
+
+      // Warnung für fehlende Zeichen anzeigen
+      const missingBox = document.getElementById('missing-chars-box');
+      if (missingChars.size > 0) {
+        missingBox.classList.remove('hidden');
+        document.getElementById('missing-chars-list').textContent = Array.from(missingChars).join(' ');
+      } else {
+        missingBox.classList.add('hidden');
+      }
+
+      renderPreviewCanvas(generatedStrokes, pageWidth, pageHeight, strokeWidth, lineStep, marginTop);
+    }
+
+    function renderPreviewCanvas(strokes, pageWidth, pageHeight, strokeWidth, lineStep, marginTop) {
+      const canvas = document.getElementById('preview-canvas');
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width === 0) return;
+
+      canvas.width = Math.round(rect.width * dpr);
+      canvas.height = Math.round(rect.height * dpr);
+      const scale = rect.width / pageWidth;
+
+      ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
+
+      // Papier-Hintergrund
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, pageWidth, pageHeight);
+
+      if (previewBgMode === 'lined') {
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        for (let y = marginTop; y < pageHeight; y += lineStep) {
+          ctx.moveTo(0, y);
+          ctx.lineTo(pageWidth, y);
+        }
+        ctx.stroke();
+      } else if (previewBgMode === 'grid') {
+        const gridStep = 18;
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.30)';
+        ctx.lineWidth = 0.7;
+        ctx.beginPath();
+        for (let x = 0; x < pageWidth; x += gridStep) {
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, pageHeight);
+        }
+        for (let y = 0; y < pageHeight; y += gridStep) {
+          ctx.moveTo(0, y);
+          ctx.lineTo(pageWidth, y);
+        }
+        ctx.stroke();
+      }
+
+      // Generierte Striche zeichnen
+      ctx.strokeStyle = '#0f172a';
+      ctx.lineWidth = strokeWidth;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      for (const stroke of strokes) {
+        if (stroke.length === 0) continue;
+        ctx.beginPath();
+        ctx.moveTo(stroke[0].x, stroke[0].y);
+        if (stroke.length === 1) {
+          ctx.lineTo(stroke[0].x + 0.5, stroke[0].y + 0.5);
+        } else {
+          for (let i = 1; i < stroke.length; i++) {
+            const prev = stroke[i - 1];
+            const curr = stroke[i];
+            const midX = (prev.x + curr.x) / 2;
+            const midY = (prev.y + curr.y) / 2;
+            ctx.quadraticCurveTo(prev.x, prev.y, midX, midY);
+          }
+          const last = stroke[stroke.length - 1];
+          ctx.lineTo(last.x, last.y);
+        }
+        ctx.stroke();
+      }
+    }
+
+    // =========================================================================
+    // 8. INITIALISIERUNG
+    // =========================================================================
+    window.addEventListener('resize', () => {
+      if (!document.getElementById('tab-recorder').classList.contains('hidden')) {
+        resizeRecorderCanvas();
+      } else {
+        updateGeneratorPreview();
+      }
+    });
+
+    window.addEventListener('load', () => {
+      loadProfileFromStorage();
+      updateProfileStats();
+      renderCharGrid();
+      renderVariantsList();
+      resizeRecorderCanvas();
+    });
+  </script>
+</body>
+</html>
